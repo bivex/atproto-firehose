@@ -76,6 +76,12 @@ List profile changes:
 npx atproto-firehose bsky.network -p app.bsky.actor.profile
 ```
 
+Show trending hashtags:
+
+```
+npm run firehose -- trending bsky.network
+```
+
 ## Author
 
 [@kcchu.xyz](https://kcchu.xyz)
