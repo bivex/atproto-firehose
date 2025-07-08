@@ -16,6 +16,7 @@ export type SubscribeReposMessage =
 export interface SubscribeRepoOptions {
   decodeRepoOps?: boolean
   filter?: RepoOpsFilterFunc
+  cursor?: number
 }
 
 export type RepoOpsFilterFunc = (

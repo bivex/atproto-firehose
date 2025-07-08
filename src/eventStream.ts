@@ -21,6 +21,7 @@ export class XrpcEventStreamClient extends EventEmitter {
 
   protected ws: WebSocket
   protected baseClient = new AtpBaseClient()
+  private seq = 0
 
   constructor(serviceUri: string, nsid: string, decoder?: Decoder) {
     super()
@@ -44,17 +45,28 @@ export class XrpcEventStreamClient extends EventEmitter {
   private async handleMessage(data: Uint8Array) {
     const [header, payload] = cborDecodeMulti(data) as any
     if (header['op'] == 1) {
+      this.seq++
       // regular message
       const t = header['t']
       if (t) {
         const lexUri = this.nsid
-        const message = this.baseClient.xrpc.lex.assertValidXrpcMessage(
-          lexUri,
-          {
+        let message: any
+        try {
+          message = this.baseClient.xrpc.lex.assertValidXrpcMessage(
+            lexUri,
+            {
+              $type: `${this.nsid}${t}`,
+              ...payload,
+              seq: this.seq,
+            },
+          )
+        } catch (e) {
+          message = {
             $type: `${this.nsid}${t}`,
             ...payload,
-          },
-        )
+            seq: this.seq,
+          }
+        }
         const decoded = await this.decoder(this, message)
         if (decoded) {
           this.emit('message', decoded)

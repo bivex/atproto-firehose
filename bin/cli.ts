@@ -15,8 +15,10 @@ import { ComAtprotoSyncSubscribeRepos, subscribeRepos } from '../src/index'
 
 const didResolver = new DidResolver({})
 
+program.name('af').description('AT Protocol firehose')
+
 program
-  .name('af')
+  .command('stream')
   .description('AT Protocol firehose')
   .argument('<host>', 'PDS/BGS host')
   .option('-a, --action <action...>', 'filter repo ops by action')
@@ -43,6 +45,7 @@ program
     const s = subscribeRepos(`wss://${host}`, {
       decodeRepoOps: !options.noRepoOps,
       filter,
+      cursor: 0,
     })
     s.on('error', (error) => {
       console.error(error)
@@ -56,22 +59,75 @@ program
       }
       if (!options.noRepoOps) {
         if (ComAtprotoSyncSubscribeRepos.isCommit(message)) {
-          message.ops.forEach((op) => printRepoOp(message.repo, op))
+          message.ops.forEach((op) => printRepoOp(message.repo, op, options))
         }
       }
     })
   })
+
+program
+  .command('trending')
+  .description('Show trending topics from AT Protocol firehose')
+  .argument('<host>', 'PDS/BGS host')
+  .action((host, options) => {
+    const trendingTracker = new Map<string, number>()
+
+    const client = subscribeRepos(`wss://${host}`, {
+      decodeRepoOps: true,
+      cursor: 0,
+    })
+    client.on('message', (m) => {
+      if (ComAtprotoSyncSubscribeRepos.isCommit(m)) {
+        m.ops.forEach((op) => {
+          if (
+            op.action === 'create' &&
+            op.path.includes('app.bsky.feed.post')
+          ) {
+            const post = op.payload as AppBskyFeedPost.Record
+            if (post.text) {
+              const hashtags = extractHashtags(post.text)
+              hashtags.forEach((tag) => {
+                trendingTracker.set(tag, (trendingTracker.get(tag) || 0) + 1)
+              })
+            }
+          }
+        })
+      }
+    })
+
+    setInterval(() => {
+      console.clear()
+      console.log('--- Trending Hashtags ---')
+      const sortedTopics = [...trendingTracker.entries()].sort(
+        (a, b) => b[1] - a[1],
+      )
+      sortedTopics.slice(0, 10).forEach(([tag, count]) => {
+        console.log(`#${tag}: ${count}`)
+      })
+    }, 5000)
+  })
+
 program.parse()
+
+const extractHashtags = (text: string): string[] => {
+  const regex = /#([a-zA-Z0-9_]+)/g
+  const matches = text.match(regex)
+  if (matches) {
+    return matches.map((tag) => tag.substring(1))
+  }
+  return []
+}
 
 const printRepoOp = async (
   repo: string,
   repoOp: ComAtprotoSyncSubscribeRepos.RepoOp,
+  options: { [key: string]: any },
 ) => {
   if (!repoOp.payload) {
     return
   }
 
-  let s = `${await formatDid(repo)}\n`
+  let s = `${await formatDid(repo, options)}\n`
   const payload = repoOp.payload as any
   switch (payload?.$type) {
     case 'app.bsky.feed.like':
@@ -118,7 +174,7 @@ const printRepoOp = async (
     case 'app.bsky.graph.follow':
       s += `    ${chalk.blue('followed')} ${
         payload.subject
-          ? await formatDid(payload.subject)
+          ? await formatDid(payload.subject, options)
           : chalk.bgRed('<unknown>')
       }\n`
       break
@@ -143,9 +199,9 @@ const printRepoOp = async (
   console.log(s)
 }
 
-const formatDid = async (did: string) => {
+const formatDid = async (did: string, options: { [key: string]: any }) => {
   let handle: string | undefined = undefined
-  if (!program.opts().noResolveDid) {
+  if (!options.noResolveDid) {
     try {
       const doc = await didResolver.resolve(did)
       if (doc && doc.alsoKnownAs && doc.alsoKnownAs.length > 0) {

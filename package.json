@@ -17,6 +17,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "af": "tsx bin/cli.ts",
+    "firehose": "node dist/bin/cli.js",
     "build": "tsup-node bin/cli.ts src/index.ts --dts",
     "clean": "rimraf ./dist",
     "prepare": "pnpm build"
